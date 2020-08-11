@@ -1,0 +1,330 @@
+#!/usr/bin/env python3
+
+"""
+youtube-album - Downloads a video from Youtube and splits tracks based on a tracklist
+License: BSD 3-Clause
+Copyright (c) 2020, Mauro <mauro@sdf.org>
+All rights reserved.
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+1. Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+"""
+
+__author__ = "Mauro"
+__version__ = "0.0.1"
+__license__ = "BSD3"
+
+
+import os
+import re
+import sys
+import json
+import shlex
+import argparse
+import datetime
+import youtube_dl
+import subprocess as sp
+from pathlib import Path
+from datetime import datetime as dt
+from youtube_dl.utils import sanitize_filename
+
+
+TRACK_RE_FORMATS = [
+    "(?P<n>\d+\.) (?P<time>(\d{1,2}:)?\d{2}:\d{2}) - (?P<track>.+)",
+    "(?P<n>\d+\.)( )?(?P<track>.+) (?P<time>.+)",
+    "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) - (?P<track>.+)",
+    "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) (?P<n>\d+(\.|\))) (?P<track>.+)",
+    "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) (?P<track>.+)",
+    "(?P<n>\d+\.)(?P<track>.+) - (?P<time>(\d{1,2}:)?\d{1,2}:\d{2})",
+    "(?P<track>.+) (?P<time>(\d{1,2}:)?\d{1,2}:\d{2})",
+]
+
+TRACK_RE = "(?P<n>\d+\.?) (?P<track>.+)"
+LENGTH_RE = "\d{1,2}:(\d{1,2}:\d{2})\.\d+?"
+MUSICDIR_RE = '.*="(.*)"'
+USER_AGENT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+YTDL_OPTS = {
+    "restrictfilenames": True,
+    "writethumbnail": True,
+    "ignoreerrors": True,
+    "geo_bypass": True,
+    "format": "bestaudio/best",
+    "postprocessors": [
+        {
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }
+    ],
+}
+
+
+def music_home() -> Path:
+    try:
+        user_dirs = open(Path.home() / ".config/user-dirs.dirs").readlines()
+        music_dir = list(filter(lambda line: "XDG_MUSIC_DIR" in line, user_dirs))
+        if music_dir:
+            music_dir = music_dir.pop()  # i prefer other music styles but whatever
+
+        music_dir = os.path.expandvars(re.findall(MUSICDIR_RE, music_dir)[0])
+        return Path(music_dir)
+    except:
+        from tempfile import gettempdir
+
+        return Path(gettempdir())
+
+
+def yt_info(video_url: str) -> dict:
+    "get video info"
+    with youtube_dl.YoutubeDL(YTDL_OPTS) as ydl:
+        youtube_dl.utils.std_headers["User-Agent"] = USER_AGENT
+        ytdl_info = ydl.extract_info(video_url, download=False)
+        return ytdl_info
+
+    return {}
+
+
+def yt_dl(video_url: str, output_dir: str) -> None:
+    "get video file"
+    outtmpl = {"outtmpl": f"{output_dir}/%(title)s/%(title)s.%(ext)s"}
+    ytdl_opts = YTDL_OPTS.copy()
+    ytdl_opts.update(outtmpl)
+    with youtube_dl.YoutubeDL(ytdl_opts) as ydl:
+        youtube_dl.utils.std_headers["User-Agent"] = USER_AGENT
+        ydl.download([video_url])
+
+
+def ffmpeg(args: str, verbose: bool = False) -> None:
+    "Base ffmpeg system call"
+    cmd = "ffmpeg {} -y {}".format("" if verbose else "-v quiet", args)
+    sp.call(shlex.split(cmd))
+
+
+def ffprobe(args: str, verbose: bool = False) -> str:
+    "Base ffprobe system call"
+    cmd = "ffprobe {} {}".format("" if verbose else "-v quiet", args)
+    return sp.check_output(shlex.split(cmd)).decode("utf-8")
+
+
+def length(
+    audio_file: str, show_sexagesimal: bool = True, verbose: bool = False
+) -> str:
+    "Returns the length of an audio"
+    duration = "duration="
+    args = '-show_format {} -i "{}"'.format(
+        "-sexagesimal" if show_sexagesimal else "", audio_file
+    )
+    output = ffprobe(args, verbose)
+    result = re.search("(?P<duration>duration=.*)", output)
+    length = ""
+    if result:
+        length = result.groupdict().get("duration").replace(duration, "")
+        length = sanitize_timestamp(length)
+
+    return length
+
+
+def slice_track(
+    audio_in: str, audio_out: str, start: str, duration: str, verbose: bool = False
+) -> None:
+    "Cuts a portion of an audio."
+    args = '-i "{}" -ss "{}" -t "{}" -acodec copy "{}"'.format(
+        audio_in, start, duration, audio_out
+    )
+    ffmpeg(args, verbose)
+
+
+def sanitize_timestamp(timestamp: str) -> str:
+    "Tries in a extremely basic way to sanitize the timestamp"
+    timestamp = re.sub("(\(|\))", "", timestamp).strip()
+    if len(timestamp.split(":")) < 3:
+        timestamp = "00:" + timestamp
+    timestamp = ":".join(
+        [f"{int(n):02}" if len(str(n)) < 2 else n for n in timestamp.split(":")]
+    )
+    return timestamp
+
+
+def sanitize_track(track: str) -> str:
+    "Tries in a extremely basic way to sanitize the track"
+    track = re.sub("  ", " ", track)
+    track = track.strip()
+    result = re.search(TRACK_RE, track)
+    if result:
+        track = result.groupdict().get("track")
+
+    return track
+
+
+def track_as_filename(track: str, file_ext: str = ".mp3") -> str:
+    "Prepares a trackname as a filename (ie: no spaces)"
+    track = sanitize_filename(track, True, False)
+    return f"{track.strip()}{file_ext}"
+
+
+def seconds_to_hhmmss(secs: str) -> str:
+    "120 -> 00:02:00"
+    return str(datetime.timedelta(seconds=secs))
+
+
+def hhmmss_to_seconds(hhmmss: str) -> float:
+    "00:02:00 -> 120"
+    hh, mm, ss = hhmmss.split(":")
+    return int(h) * 3600 + int(m) * 60 + int(s)
+
+
+def tracklist_from_chapters(chapters: list = []) -> list:
+    "Returns a list with a tuple (idx,timestamp,track_name) given a chapter list"
+    idx = 1
+    tracklist = []
+    padding = int(len(str(len(chapters))))
+    for track in chapters:
+        tracklist.append(
+            {
+                "n": str(idx).zfill(padding),
+                "start": sanitize_timestamp(seconds_to_hhmmss(track.get("start_time"))),
+                "end": sanitize_timestamp(seconds_to_hhmmss(track.get("end_time"))),
+                "title": sanitize_track(track.get("title")),
+            }
+        )
+        idx += 1
+
+    return tracklist
+
+
+def tracklist_from_file(tracklist_file: str) -> list:
+    "Returns a list with a tuple (idx,timestamp,track_name) given a tracklist file"
+    if Path(tracklist_file).exists:
+        tracks = open(tracklist_file, "r").readlines()
+        tracks = list(map(lambda t: sanitize_track(t.replace("\n", "")), tracks))
+        idx = 0
+        # First this script needs to find out which REGEX works.
+        TRACK_RE = None
+        for re_format in TRACK_RE_FORMATS:
+            valid = re.search(re_format, tracks[0])
+            if valid:
+                TRACK_RE = TRACK_RE_FORMATS[idx]
+                break
+            else:
+                idx += 1
+
+        # Second prepare the tracklist
+        tracklist = []
+        idx = 1
+        padding = int(len(str(len(tracks))))
+        for track in tracks:
+            result = re.search(TRACK_RE, track)
+            data = result.groupdict()
+            tracklist.append(
+                {
+                    "n": str(idx).zfill(padding),
+                    "start": sanitize_timestamp(data.get("time")),
+                    "end": None,
+                    "title": sanitize_track(data.get("track")),
+                }
+            )
+            idx += 1
+
+        # Finally populate the "end" times in the tracklist
+        for idx in range(len(tracklist) - 1):
+            tracklist[idx]["end"] = tracklist[idx + 1].get("start")
+
+        return tracklist
+    else:
+        return []
+
+
+def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None:
+    audio_length = length(audio_file)
+    outdir = audio_file.parent
+
+    for track in tracklist:
+        outfile = f"{track.get('n')}__{track_as_filename(track.get('title'))}"
+        slice_track(
+            audio_file, Path(outdir) / outfile, track.get("start"), track.get("end")
+        )
+
+
+def download_album(
+    video: str, output_dir: str, tracklist: str, verbose: bool = False
+) -> None:
+    data = yt_info(video)
+    tracklist = []
+    if tracklist:
+        tracklist = tracklist_from_file(tracklist)
+    else:
+        if "chapters" in list(data.keys()):
+            tracklist = tracklist_from_chapters(data.get("chapters"))
+
+    if not tracklist:
+        print("[ERROR] Missing playlist, can't continue")
+        sys.exit(1)
+
+    yt_dl(video, output_dir)
+    audio_title = sanitize_filename(data.get("title"), True, False)
+    audio_title = Path(output_dir) / audio_title / f"{audio_title}.mp3"
+    if audio_title.exists():
+        split_audio(audio_title, tracklist, verbose)
+        audio_title.unlink()
+        sys.exit(0)
+    else:
+        print("[ERROR] Missing audio file, can't continue")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("video", type=str, help="Use this audio as source")
+    parser.add_argument(
+        "-o",
+        "--output-directory",
+        type=str,
+        default=music_home(),
+        help="Save the audio files in this directory. Default: {}"
+        "".format(music_home()),
+    )
+    parser.add_argument(
+        "-t",
+        "--tracklist",
+        type=str,
+        required=False,
+        help="Use this file to cut the audio",
+    )
+    parser.add_argument(
+        "-vt", "--verify-tracklist", action="store_true", help="Show stdout messages"
+    )
+    parser.add_argument(
+        "-V", "--verbose", action="store_true", help="Show stdout messages"
+    )
+
+    args = parser.parse_args()
+
+    if args.tracklist and args.verify_tracklist:
+        print(tracklist_from_file(args.tracklist))
+        sys.exit(0)
+    else:
+        if args.video:
+            download_album(
+                args.video, args.output_directory, args.tracklist, args.verbose
+            )
+        else:
+            args.print_help()
