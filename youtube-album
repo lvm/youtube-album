@@ -48,6 +48,7 @@ from datetime import datetime as dt
 from youtube_dl.utils import sanitize_filename
 
 
+# TRACK_RE = "(?P<track>.*) (?P<time>\d{2}:\d{2})"
 TRACK_RE_FORMATS = [
     "(?P<n>\d+\.) (?P<time>(\d{1,2}:)?\d{2}:\d{2}) - (?P<track>.+)",
     "(?P<n>\d+\.)( )?(?P<track>.+) (?P<time>.+)",
@@ -310,7 +311,7 @@ if __name__ == "__main__":
         help="Use this file to cut the audio",
     )
     parser.add_argument(
-        "-vt", "--verify-tracklist", action="store_true", help="Show stdout messages"
+        "-vt", "--verify-tracklist", action="store_true", help="Verify a Tracklist format"
     )
     parser.add_argument(
         "-V", "--verbose", action="store_true", help="Show stdout messages"
