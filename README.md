@@ -48,8 +48,7 @@ Verify the tracklist format. This won't download anything, but print a list with
 $ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE -vt -t my-fav-things.txt
 ```
 
-
-### Tracklist
+### Tracklist formats
 
 Youtube (these days) uses something called "chapters" which splits the video in small chunks (ie: Chapters), this script will use that in case you don't specify a `tracklist file`. But if you still want to define a `tracklist file` or if the Video doesn't has a "tracklist", some of the formats allowed are:
 
@@ -61,6 +60,10 @@ Youtube (these days) uses something called "chapters" which splits the video in 
 * `<time> - <track name>`
 * `<time> <track no>) <track>`
 * `<time> <track no>. <track>`
+
+## Dependencies
+
+https://pypi.org/project/youtube_dl/
 
 ## LICENSE 
 
