@@ -24,6 +24,44 @@ optional arguments:
 
 ```
 
+Download the album to the default directory
+
+```
+$ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE
+```
+
+Download the album to a  given directory
+
+```
+$ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE -o /path/to/music
+```
+
+Download the album to a given directory using a given tracklist
+
+```
+$ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE -o /path/to/music -t my-fav-things.txt
+```
+
+Verify the tracklist format. This won't download anything, but print a list with the contents of the tracklist.
+
+```
+$ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE -vt -t my-fav-things.txt
+```
+
+
+### Tracklist
+
+Youtube (these days) uses something called "chapters" which splits the video in small chunks (ie: Chapters), this script will use that in case you don't specify a `tracklist file`. But if you still want to define a `tracklist file` or if the Video doesn't has a "tracklist", some of the formats allowed are:
+
+* `<track no>. <time> - <track name>`
+* `<track no>.<track name> <time>`
+* `<track no>. <track name> <time>`
+* `<track no>. <track name> - <time>`
+* `<time> <track>`
+* `<time> - <track name>`
+* `<time> <track no>) <track>`
+* `<time> <track no>. <track>`
+
 ## LICENSE 
 
 See [LICENSE](LICENSE)
