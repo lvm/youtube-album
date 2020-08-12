@@ -48,8 +48,8 @@ from datetime import datetime as dt
 from youtube_dl.utils import sanitize_filename
 
 
-# TRACK_RE = "(?P<track>.*) (?P<time>\d{2}:\d{2})"
 TRACK_RE_FORMATS = [
+    "(?P<time>(\d+:)?\d{2}:\d{2}) (?P<n>\d+\.)(?P<track>.+)",
     "(?P<n>\d+\.) (?P<time>(\d{1,2}:)?\d{2}:\d{2}) - (?P<track>.+)",
     "(?P<n>\d+\.)( )?(?P<track>.+) (?P<time>.+)",
     "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) - (?P<track>.+)",
@@ -59,11 +59,12 @@ TRACK_RE_FORMATS = [
     "(?P<track>.+) (?P<time>(\d{1,2}:)?\d{1,2}:\d{2})",
 ]
 
-TRACK_RE = "(?P<n>\d+\.?) (?P<track>.+)"
+TRACK_RE = "(?P<n>\d+\.?)( )?(?P<track>.+)"
 LENGTH_RE = "\d{1,2}:(\d{1,2}:\d{2})\.\d+?"
 MUSICDIR_RE = '.*="(.*)"'
 USER_AGENT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 YTDL_OPTS = {
+    "quiet": True,
     "restrictfilenames": True,
     "writethumbnail": True,
     "ignoreerrors": True,
@@ -165,13 +166,10 @@ def sanitize_timestamp(timestamp: str) -> str:
     return timestamp
 
 
-def sanitize_track(track: str) -> str:
+def sanitize_track(track: str, full:bool=True) -> str:
     "Tries in a extremely basic way to sanitize the track"
     track = re.sub("  ", " ", track)
     track = track.strip()
-    result = re.search(TRACK_RE, track)
-    if result:
-        track = result.groupdict().get("track")
 
     return track
 
@@ -216,14 +214,15 @@ def tracklist_from_file(tracklist_file: str) -> list:
     "Returns a list with a tuple (idx,timestamp,track_name) given a tracklist file"
     if Path(tracklist_file).exists:
         tracks = open(tracklist_file, "r").readlines()
-        tracks = list(map(lambda t: sanitize_track(t.replace("\n", "")), tracks))
+        tracks = list(map(lambda t: sanitize_track(t.replace("\n", ""), False), tracks))
+        tracks = list(filter(lambda t: t, tracks))
         idx = 0
         # First this script needs to find out which REGEX works.
-        TRACK_RE = None
+        RE_TRACK = None
         for re_format in TRACK_RE_FORMATS:
             valid = re.search(re_format, tracks[0])
             if valid:
-                TRACK_RE = TRACK_RE_FORMATS[idx]
+                RE_TRACK = TRACK_RE_FORMATS[idx]
                 break
             else:
                 idx += 1
@@ -233,7 +232,7 @@ def tracklist_from_file(tracklist_file: str) -> list:
         idx = 1
         padding = int(len(str(len(tracks))))
         for track in tracks:
-            result = re.search(TRACK_RE, track)
+            result = re.search(RE_TRACK, track)
             data = result.groupdict()
             tracklist.append(
                 {
@@ -261,19 +260,23 @@ def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None
     for track in tracklist:
         outfile = f"{track.get('n')}__{track_as_filename(track.get('title'))}"
         slice_track(
-            audio_file, Path(outdir) / outfile, track.get("start"), track.get("end")
+            audio_file,
+            Path(outdir) / outfile,
+            track.get("start"),
+            track.get("end"),
+            verbose,
         )
 
 
 def download_album(
-    video: str, output_dir: str, tracklist: str, verbose: bool = False
+    video: str, output_dir: str, tracklist_file: str, verbose: bool = False
 ) -> None:
     data = yt_info(video)
     tracklist = []
-    if tracklist:
-        tracklist = tracklist_from_file(tracklist)
+    if tracklist_file:
+        tracklist = tracklist_from_file(tracklist_file)
     else:
-        if "chapters" in list(data.keys()):
+        if "chapters" in list(data.keys()) and data.get("chapters"):
             tracklist = tracklist_from_chapters(data.get("chapters"))
 
     if not tracklist:
@@ -286,7 +289,6 @@ def download_album(
     if audio_title.exists():
         split_audio(audio_title, tracklist, verbose)
         audio_title.unlink()
-        sys.exit(0)
     else:
         print("[ERROR] Missing audio file, can't continue")
         sys.exit(1)
@@ -311,7 +313,13 @@ if __name__ == "__main__":
         help="Use this file to cut the audio",
     )
     parser.add_argument(
-        "-vt", "--verify-tracklist", action="store_true", help="Verify a Tracklist format"
+        "-i", "--info", action="store_true", help="Don't download just get the info"
+    )
+    parser.add_argument(
+        "-vt",
+        "--verify-tracklist",
+        action="store_true",
+        help="Verify a Tracklist format",
     )
     parser.add_argument(
         "-V", "--verbose", action="store_true", help="Show stdout messages"
@@ -324,8 +332,13 @@ if __name__ == "__main__":
         sys.exit(0)
     else:
         if args.video:
-            download_album(
-                args.video, args.output_directory, args.tracklist, args.verbose
-            )
+            if args.info:
+                data = yt_info(args.video)
+                print (json.dumps(data))
+            else:
+                download_album(
+                    args.video, args.output_directory, args.tracklist, args.verbose
+                )
+            sys.exit(0)
         else:
             args.print_help()
