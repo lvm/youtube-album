@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 __author__ = "Mauro"
-__version__ = "0.0.23"
+__version__ = "0.0.3"
 __license__ = "BSD3"
 
 
@@ -348,8 +348,9 @@ if __name__ == "__main__":
                 data = yt_info(args.video)
                 print (json.dumps(data))
             else:
+                video = args.video if args.video.startswith("https://") else f"https://www.youtube.com/watch?v={args.video}"
                 download_album(
-                    args.video, args.output_directory, args.tracklist, args.verbose
+                    video, args.output_directory, args.tracklist, args.verbose
                 )
             sys.exit(0)
         else:
