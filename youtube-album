@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 __author__ = "Mauro"
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 __license__ = "BSD3"
 
 
@@ -106,11 +106,12 @@ def yt_info(video_url: str) -> dict:
     return {}
 
 
-def yt_dl(video_url: str, output_dir: str) -> None:
+def yt_dl(video_url: str, output_dir: str, verbose: bool = False) -> None:
     "get video file"
-    outtmpl = {"outtmpl": f"{output_dir}/%(title)s/%(title)s.%(ext)s"}
     ytdl_opts = YTDL_OPTS.copy()
-    ytdl_opts.update(outtmpl)
+    ytdl_opts.update({"outtmpl": f"{output_dir}/%(title)s/%(title)s.%(ext)s"})
+    if verbose:
+        ytdl_opts.update({"quiet": False})
     with youtube_dl.YoutubeDL(ytdl_opts) as ydl:
         youtube_dl.utils.std_headers["User-Agent"] = USER_AGENT
         ydl.download([video_url])
@@ -197,26 +198,27 @@ def hhmmss_to_seconds(hhmmss: str) -> float:
     return int(h) * 3600 + int(m) * 60 + int(s)
 
 
-def tracklist_from_chapters(chapters: list = []) -> list:
+def tracklist_from_chapters(chapters: list = [], verbose:bool=False) -> list:
     "Returns a list with a tuple (idx,timestamp,track_name) given a chapter list"
     idx = 1
     tracklist = []
     padding = int(len(str(len(chapters))))
     for track in chapters:
-        tracklist.append(
-            {
-                "n": zfill(idx, padding),
-                "start": sanitize_timestamp(seconds_to_hhmmss(track.get("start_time"))),
-                "end": sanitize_timestamp(seconds_to_hhmmss(track.get("end_time"))),
-                "title": sanitize_track(track.get("title")),
-            }
-        )
+        _ = {
+            "n": zfill(idx, padding),
+            "start": sanitize_timestamp(seconds_to_hhmmss(track.get("start_time"))),
+            "end": sanitize_timestamp(seconds_to_hhmmss(track.get("end_time"))),
+            "title": sanitize_track(track.get("title")),
+        }
+        if verbose:
+            print(_)
+        tracklist.append(_)
         idx += 1
 
     return tracklist
 
 
-def tracklist_from_file(tracklist_file: str) -> list:
+def tracklist_from_file(tracklist_file: str, verbose:bool=False) -> list:
     "Returns a list with a tuple (idx,timestamp,track_name) given a tracklist file"
     if Path(tracklist_file).exists:
         tracks = open(tracklist_file, "r").readlines()
@@ -232,6 +234,9 @@ def tracklist_from_file(tracklist_file: str) -> list:
                 break
             else:
                 idx += 1
+
+        if verbose:
+            print(f"Using regex: {RE_TRACK!r}")
 
         # Second prepare the tracklist
         tracklist = []
@@ -253,6 +258,8 @@ def tracklist_from_file(tracklist_file: str) -> list:
         # Finally populate the "end" times in the tracklist
         for idx in range(len(tracklist) - 1):
             tracklist[idx]["end"] = tracklist[idx + 1].get("start")
+            if verbose:
+                print(tracklist[idx])
 
         return tracklist
     else:
@@ -264,7 +271,7 @@ def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None
     outdir = audio_file.parent
 
     idx = 1
-    padding = len(str(tracklist))
+    padding = len(str(len(tracklist)))
     for track in tracklist:
         pos = track.get('n')
         pos = pos if pos else idx
@@ -274,14 +281,16 @@ def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None
             audio_file,
             Path(outdir) / outfile,
             track.get("start"),
-            track.get("end"),
+            track.get("end") or audio_length,
             verbose,
         )
+        if verbose:
+            print (outfile)
         idx += 1
 
 
 def download_album(
-    video: str, output_dir: str, tracklist_file: str, verbose: bool = False
+        video: str, output_dir: str, tracklist_file: str, keep_original:bool=False, verbose: bool = False
 ) -> None:
     data = yt_info(video)
     tracklist = []
@@ -295,12 +304,13 @@ def download_album(
         print("[ERROR] Missing playlist, can't continue")
         sys.exit(1)
 
-    yt_dl(video, output_dir)
+    yt_dl(video, output_dir, verbose)
     audio_title = sanitize_filename(data.get("title"), True, False)
     audio_title = Path(output_dir) / audio_title / f"{audio_title}.mp3"
     if audio_title.exists():
         split_audio(audio_title, tracklist, verbose)
-        audio_title.unlink()
+        if not keep_original:
+            audio_title.unlink()
     else:
         print("[ERROR] Missing audio file, can't continue")
         sys.exit(1)
@@ -334,6 +344,9 @@ if __name__ == "__main__":
         help="Verify a Tracklist format",
     )
     parser.add_argument(
+        "-k", "--keep-original", action="store_true", help="Keep original (non-sliced) mp3"
+    )
+    parser.add_argument(
         "-V", "--verbose", action="store_true", help="Show stdout messages"
     )
 
@@ -350,7 +363,7 @@ if __name__ == "__main__":
             else:
                 video = args.video if args.video.startswith("https://") else f"https://www.youtube.com/watch?v={args.video}"
                 download_album(
-                    video, args.output_directory, args.tracklist, args.verbose
+                    video, args.output_directory, args.tracklist, args.keep_original, args.verbose
                 )
             sys.exit(0)
         else:
