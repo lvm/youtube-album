@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 __author__ = "Mauro"
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 __license__ = "BSD3"
 
 
@@ -49,6 +49,7 @@ from youtube_dl.utils import sanitize_filename
 
 
 TRACK_RE_FORMATS = [
+    "(?P<time>(\d+:)?\d{2}:\d{2}) - (?P<track>.+)",
     "(?P<time>(\d+:)?\d{2}:\d{2}) (?P<n>\d+\.)(?P<track>.+)",
     "(?P<n>\d+\.) (?P<time>(\d{1,2}:)?\d{2}:\d{2}) - (?P<track>.+)",
     "(?P<n>\d+\.)( )?(?P<track>.+) (?P<time>.+)",
@@ -155,6 +156,11 @@ def slice_track(
     ffmpeg(args, verbose)
 
 
+def zfill(pos:int=1, length:int=2) -> str:
+    "4 -> 04"
+    return str(pos).zfill(length)
+
+
 def sanitize_timestamp(timestamp: str) -> str:
     "Tries in a extremely basic way to sanitize the timestamp"
     timestamp = re.sub("(\(|\))", "", timestamp).strip()
@@ -199,7 +205,7 @@ def tracklist_from_chapters(chapters: list = []) -> list:
     for track in chapters:
         tracklist.append(
             {
-                "n": str(idx).zfill(padding),
+                "n": zfill(idx, padding),
                 "start": sanitize_timestamp(seconds_to_hhmmss(track.get("start_time"))),
                 "end": sanitize_timestamp(seconds_to_hhmmss(track.get("end_time"))),
                 "title": sanitize_track(track.get("title")),
@@ -236,7 +242,7 @@ def tracklist_from_file(tracklist_file: str) -> list:
             data = result.groupdict()
             tracklist.append(
                 {
-                    "n": str(idx).zfill(padding),
+                    "n": zfill(idx, padding),
                     "start": sanitize_timestamp(data.get("time")),
                     "end": None,
                     "title": sanitize_track(data.get("track")),
@@ -257,8 +263,13 @@ def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None
     audio_length = length(audio_file)
     outdir = audio_file.parent
 
+    idx = 1
+    padding = len(tracklist)
     for track in tracklist:
-        outfile = f"{track.get('n')}__{track_as_filename(track.get('title'))}"
+        pos = track.get('n')
+        pos = pos if pos else idx
+        pos = zfill(pos, padding)
+        outfile = f"{pos}__{track_as_filename(track.get('title'))}"
         slice_track(
             audio_file,
             Path(outdir) / outfile,
@@ -266,6 +277,7 @@ def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None
             track.get("end"),
             verbose,
         )
+        idx += 1
 
 
 def download_album(
