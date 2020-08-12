@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 __author__ = "Mauro"
-__version__ = "0.0.2"
+__version__ = "0.0.23"
 __license__ = "BSD3"
 
 
@@ -264,7 +264,7 @@ def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None
     outdir = audio_file.parent
 
     idx = 1
-    padding = len(tracklist)
+    padding = len(str(tracklist))
     for track in tracklist:
         pos = track.get('n')
         pos = pos if pos else idx
