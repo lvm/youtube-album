@@ -7,7 +7,7 @@ The next iteration of [2trax](https://github.com/lvm/2trax) but rewritten and si
 ## Usage
 
 ```
-usage: youtube-album [-h] [-o OUTPUT_DIRECTORY] [-t TRACKLIST] [-vt] [-V] video
+usage: youtube-album [-h] [-o OUTPUT_DIRECTORY] [-t TRACKLIST] [-i] [-vt] [-V] video
 
 positional arguments:
   video                 Use this audio as source
@@ -15,19 +15,26 @@ positional arguments:
 optional arguments:
   -h, --help            show this help message and exit
   -o OUTPUT_DIRECTORY, --output-directory OUTPUT_DIRECTORY
-                        Save the audio files in this directory. Default: ~/Music
+                        Save the audio files in this directory. Default: /home/mauro/Music
   -t TRACKLIST, --tracklist TRACKLIST
                         Use this file to cut the audio
+  -i, --info            Don't download just get the info
   -vt, --verify-tracklist
                         Verify a Tracklist format
   -V, --verbose         Show stdout messages
-
 ```
 
 Download the album to the default directory
 
 ```
 $ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE
+```
+
+
+Download the album to the default directory using only the Youtube Video ID.
+
+```
+$ youtube-album UlFNy9iWrpE
 ```
 
 Download the album to a  given directory
@@ -48,6 +55,12 @@ Verify the tracklist format. This won't download anything, but print a list with
 $ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE -vt -t my-fav-things.txt
 ```
 
+Just get JSON info about the video.
+
+```
+$ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE -i
+```
+
 ### Tracklist formats
 
 Youtube (these days) uses something called "chapters" which splits the video in small chunks (ie: Chapters), this script will use that in case you don't specify a `tracklist file`. But if you still want to define a `tracklist file` or if the Video doesn't has a "tracklist", some of the formats allowed are:
@@ -60,6 +73,7 @@ Youtube (these days) uses something called "chapters" which splits the video in 
 * `<time> - <track name>`
 * `<time> <track no>) <track>`
 * `<time> <track no>. <track>`
+* `<time> <track no>.<track name>`
 
 ## Dependencies
 
