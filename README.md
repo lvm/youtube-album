@@ -7,7 +7,7 @@ The next iteration of [2trax](https://github.com/lvm/2trax) but rewritten and si
 ## Usage
 
 ```
-usage: youtube-album [-h] [-o OUTPUT_DIRECTORY] [-t TRACKLIST] [-i] [-vt] [-V] video
+usage: youtube-album [-h] [-o OUTPUT_DIRECTORY] [-t TRACKLIST] [-i] [-vt] [-bt] [-k] [-V] video
 
 positional arguments:
   video                 Use this audio as source
@@ -21,6 +21,9 @@ optional arguments:
   -i, --info            Don't download just get the info
   -vt, --verify-tracklist
                         Verify a Tracklist format
+  -bt, --build-tracklist
+                        Build a Tracklist format from a tracklist (?) From: 1. Song 1 04:03 2. Song 2 04:09 ... To: 1. Song 1 04:03 2. Song 2 08:12 ...
+  -k, --keep-original   Keep original (non-sliced) mp3
   -V, --verbose         Show stdout messages
 ```
 
@@ -37,6 +40,12 @@ Download the album to the default directory using only the Youtube Video ID.
 $ youtube-album UlFNy9iWrpE
 ```
 
+Download the album to the default directory using only the Youtube Video ID and keep the unsliced MP3
+
+```
+$ youtube-album UlFNy9iWrpE -k
+```
+
 Download the album to a  given directory
 
 ```
@@ -47,6 +56,12 @@ Download the album to a given directory using a given tracklist
 
 ```
 $ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE -o /path/to/music -t my-fav-things.txt
+```
+
+Download the album to a given directory using a "song list" that needs to be "built" (See **Building a slice-able tracklist**)
+
+```
+$ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE -o /path/to/music -bt -t my-fav-things.txt
 ```
 
 Verify the tracklist format. This won't download anything, but print a list with the contents of the tracklist.
@@ -74,6 +89,27 @@ Youtube (these days) uses something called "chapters" which splits the video in 
 * `<time> <track no>) <track>`
 * `<time> <track no>. <track>`
 * `<time> <track no>.<track name>`
+
+### Building a slice-able tracklist
+
+Sometimes there isn't a tracklist available but there's a _song list_ with their respective length. Here's an example:
+
+> From the album "Hypnotic Blood Art" by "Prosanctus Inferi"
+
+```
+1. Dark Scarp of Hell 04:53
+2. Pulpit Sycophants 04:09
+3. Sheol Below 04:05
+4. Hypnotic Blood Art 04:33
+5. Blood Synod 04:05
+6. Torture Enraped 04:28
+7. Bellicose Spiritual Violence 05:05
+8. Void Called as Black Bonds 03:45
+9. Geist Enthralled 04:14
+10. Washed in the Blood 03:31
+11. The Fearful Pit 04:24
+```
+
 
 ## Dependencies
 
