@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 __author__ = "Mauro"
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 __license__ = "BSD3"
 
 
@@ -157,7 +157,7 @@ def slice_track(
     ffmpeg(args, verbose)
 
 
-def zfill(pos:int=1, length:int=2) -> str:
+def zfill(pos: int = 1, length: int = 2) -> str:
     "4 -> 04"
     return str(pos).zfill(length)
 
@@ -173,7 +173,7 @@ def sanitize_timestamp(timestamp: str) -> str:
     return timestamp
 
 
-def sanitize_track(track: str, full:bool=True) -> str:
+def sanitize_track(track: str, full: bool = True) -> str:
     "Tries in a extremely basic way to sanitize the track"
     track = re.sub("  ", " ", track)
     track = track.strip()
@@ -195,10 +195,10 @@ def seconds_to_hhmmss(secs: str) -> str:
 def hhmmss_to_seconds(hhmmss: str) -> float:
     "00:02:00 -> 120"
     hh, mm, ss = hhmmss.split(":")
-    return int(h) * 3600 + int(m) * 60 + int(s)
+    return int(hh) * 3600 + int(mm) * 60 + int(ss)
 
 
-def tracklist_from_chapters(chapters: list = [], verbose:bool=False) -> list:
+def tracklist_from_chapters(chapters: list = [], verbose: bool = False) -> list:
     "Returns a list with a tuple (idx,timestamp,track_name) given a chapter list"
     idx = 1
     tracklist = []
@@ -218,7 +218,7 @@ def tracklist_from_chapters(chapters: list = [], verbose:bool=False) -> list:
     return tracklist
 
 
-def tracklist_from_file(tracklist_file: str, verbose:bool=False) -> list:
+def tracklist_from_file(tracklist_file: str, verbose: bool = False) -> list:
     "Returns a list with a tuple (idx,timestamp,track_name) given a tracklist file"
     if Path(tracklist_file).exists:
         tracks = open(tracklist_file, "r").readlines()
@@ -266,6 +266,67 @@ def tracklist_from_file(tracklist_file: str, verbose:bool=False) -> list:
         return []
 
 
+def build_tracklist_from_file(tracklist_file: str, verbose: bool = False) -> list:
+    "Returns a list with a tuple (idx,timestamp,track_name) given a tracklist file"
+    if Path(tracklist_file).exists:
+        tracks = open(tracklist_file, "r").readlines()
+        tracks = list(map(lambda t: sanitize_track(t.replace("\n", ""), False), tracks))
+        tracks = list(filter(lambda t: t, tracks))
+        idx = 0
+        # First this script needs to find out which REGEX works.
+        RE_TRACK = None
+        for re_format in TRACK_RE_FORMATS:
+            valid = re.search(re_format, tracks[0])
+            if valid:
+                RE_TRACK = TRACK_RE_FORMATS[idx]
+                break
+            else:
+                idx += 1
+
+        if verbose:
+            print(f"Using regex: {RE_TRACK!r}")
+
+        # Second prepare the tracklist
+        tracklist = []
+        idx = 1
+        padding = int(len(str(len(tracks))))
+        for track in tracks:
+            result = re.search(RE_TRACK, track)
+            data = result.groupdict()
+            tracklist.append(
+                {
+                    "n": zfill(idx, padding),
+                    "length": sanitize_timestamp(data.get("time")),
+                    "start": 0,
+                    "end": 0,
+                    "title": sanitize_track(data.get("track")),
+                }
+            )
+            idx += 1
+
+        # Finally populate the "end" times in the tracklist
+        start_at = 0
+        for idx in range(len(tracklist)):
+            length = tracklist[idx]["length"]
+            length_sec = hhmmss_to_seconds(length)
+
+            start = seconds_to_hhmmss(start_at)
+            end = seconds_to_hhmmss(start_at + length_sec)
+            tracklist[idx]["start"] = start
+            tracklist[idx]["end"] = end
+            del tracklist[idx]["length"]
+
+            start_at = start_at + length_sec
+            if verbose:
+                print(tracklist[idx])
+
+        print(tracklist)
+
+        return tracklist
+    else:
+        return []
+
+
 def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None:
     audio_length = length(audio_file)
     outdir = audio_file.parent
@@ -273,7 +334,7 @@ def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None
     idx = 1
     padding = len(str(len(tracklist)))
     for track in tracklist:
-        pos = track.get('n')
+        pos = track.get("n")
         pos = pos if pos else idx
         pos = zfill(pos, padding)
         outfile = f"{pos}__{track_as_filename(track.get('title'))}"
@@ -285,17 +346,17 @@ def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None
             verbose,
         )
         if verbose:
-            print (outfile)
+            print(outfile)
         idx += 1
 
 
-def download_album(
-        video: str, output_dir: str, tracklist_file: str, keep_original:bool=False, verbose: bool = False
-) -> None:
-    data = yt_info(video)
+def prepare_tracklist(data: dict, tracklist_file: str, build_it: bool = False) -> list:
     tracklist = []
     if tracklist_file:
-        tracklist = tracklist_from_file(tracklist_file)
+        if build_it:
+            tracklist = build_tracklist_from_file(tracklist_file)
+        else:
+            tracklist = tracklist_from_file(tracklist_file)
     else:
         if "chapters" in list(data.keys()) and data.get("chapters"):
             tracklist = tracklist_from_chapters(data.get("chapters"))
@@ -304,9 +365,20 @@ def download_album(
         print("[ERROR] Missing playlist, can't continue")
         sys.exit(1)
 
+    return tracklist
+
+
+def download_album(
+    video: str,
+    output_dir: str,
+    data: dict,
+    keep_original: bool = False,
+    verbose: bool = False,
+) -> None:
     yt_dl(video, output_dir, verbose)
     audio_title = sanitize_filename(data.get("title"), True, False)
     audio_title = Path(output_dir) / audio_title / f"{audio_title}.mp3"
+    tracklist = data.get("tracklist")
     if audio_title.exists():
         split_audio(audio_title, tracklist, verbose)
         if not keep_original:
@@ -344,7 +416,26 @@ if __name__ == "__main__":
         help="Verify a Tracklist format",
     )
     parser.add_argument(
-        "-k", "--keep-original", action="store_true", help="Keep original (non-sliced) mp3"
+        "-bt",
+        "--build-tracklist",
+        action="store_true",
+        help="""
+        Build a Tracklist format from a tracklist (?)
+        From:
+        1. Song 1 04:03
+        2. Song 2 04:09
+        ...
+        To:
+        1. Song 1 04:03
+        2. Song 2 08:12
+        ...
+        """,
+    )
+    parser.add_argument(
+        "-k",
+        "--keep-original",
+        action="store_true",
+        help="Keep original (non-sliced) mp3",
     )
     parser.add_argument(
         "-V", "--verbose", action="store_true", help="Show stdout messages"
@@ -357,13 +448,19 @@ if __name__ == "__main__":
         sys.exit(0)
     else:
         if args.video:
+            data = yt_info(args.video)
+            video = (
+                args.video
+                if args.video.startswith("https://")
+                else f"https://www.youtube.com/watch?v={args.video}"
+            )
+            tracklist = prepare_tracklist(data, args.tracklist, args.build_tracklist)
+            data["tracklist"] = tracklist
             if args.info:
-                data = yt_info(args.video)
-                print (json.dumps(data))
+                print(json.dumps(data))
             else:
-                video = args.video if args.video.startswith("https://") else f"https://www.youtube.com/watch?v={args.video}"
                 download_album(
-                    video, args.output_directory, args.tracklist, args.keep_original, args.verbose
+                    video, args.output_directory, data, args.keep_original, args.verbose
                 )
             sys.exit(0)
         else:
