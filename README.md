@@ -1,6 +1,6 @@
 # youtube-album
 
-Downloads a video from Youtube and splits tracks based on a tracklist.
+Downloads a video from Youtube and splits tracks based on a tracklist. It'll also try to save ID3 Tags.
 
 The next iteration of [2trax](https://github.com/lvm/2trax) but rewritten and simplified.
 
@@ -114,6 +114,7 @@ Sometimes there isn't a tracklist available but there's a _song list_ with their
 ## Dependencies
 
 https://pypi.org/project/youtube_dl/
+https://pypi.org/project/eyeD3/ [optional]
 
 ## LICENSE 
 
