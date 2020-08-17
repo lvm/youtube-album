@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 __author__ = "Mauro"
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 __license__ = "BSD3"
 
 
@@ -39,6 +39,7 @@ import re
 import sys
 import json
 import shlex
+import string
 import argparse
 import datetime
 import youtube_dl
@@ -47,19 +48,30 @@ from pathlib import Path
 from datetime import datetime as dt
 from youtube_dl.utils import sanitize_filename
 
+SAVE_ID3 = True
+try:
+    import eyed3
+except ImportError:
+    print("[WARN] Install `eyed3` if you want to save ID3 Tags.")
+    SAVE_ID3 = False
+
 
 TRACK_RE_FORMATS = [
     "(?P<time>(\d+:)?\d{2}:\d{2}) - (?P<track>.+)",
     "(?P<time>(\d+:)?\d{2}:\d{2}) (?P<n>\d+\.)(?P<track>.+)",
+    "(?P<time>(\d+:)?\d{2}:\d{2}) (?P<n>\d+\))(?P<track>.+)",
     "(?P<n>\d+\.) (?P<time>(\d{1,2}:)?\d{2}:\d{2}) - (?P<track>.+)",
     "(?P<n>\d+\.)( )?(?P<track>.+) (?P<time>.+)",
+    "(?P<n>\d+\)) (?P<track>.+) (?P<time>.+)",
     "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) - (?P<track>.+)",
     "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) (?P<n>\d+(\.|\))) (?P<track>.+)",
     "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) (?P<track>.+)",
     "(?P<n>\d+\.)(?P<track>.+) - (?P<time>(\d{1,2}:)?\d{1,2}:\d{2})",
     "(?P<track>.+) (?P<time>(\d{1,2}:)?\d{1,2}:\d{2})",
 ]
-
+BAND_ALBUM_RE = (
+    f"(?P<band>[{string.printable} ]+)( — | ▲ | - )(?P<album>[{string.printable}]+)"
+)
 TRACK_RE = "(?P<n>\d+\.?)( )?(?P<track>.+)"
 LENGTH_RE = "\d{1,2}:(\d{1,2}:\d{2})\.\d+?"
 MUSICDIR_RE = '.*="(.*)"'
@@ -173,12 +185,23 @@ def sanitize_timestamp(timestamp: str) -> str:
     return timestamp
 
 
-def sanitize_track(track: str, full: bool = True) -> str:
+def sanitize_track(track: str) -> str:
     "Tries in a extremely basic way to sanitize the track"
     track = re.sub("  ", " ", track)
     track = track.strip()
 
     return track
+
+
+def sanitize_album(album: str) -> str:
+    clean_these = [
+        "full album",  # from youtube probably"
+        "\d{4}",  # year
+        "(\[|\().*(\]|\))",
+        "HD",
+    ]
+    album = re.sub("|".join(clean_these), "", album, flags=re.IGNORECASE).strip()
+    return album
 
 
 def track_as_filename(track: str, file_ext: str = ".mp3") -> str:
@@ -196,6 +219,18 @@ def hhmmss_to_seconds(hhmmss: str) -> float:
     "00:02:00 -> 120"
     hh, mm, ss = hhmmss.split(":")
     return int(hh) * 3600 + int(mm) * 60 + int(ss)
+
+
+def guess_band_album(audio_title: str) -> dict:
+    "Guesses the band / album based on the (non-sliced) filename"
+    dct = {"band":"", "album":""}
+    result = re.search(BAND_ALBUM_RE, audio_title)
+    if result:
+        dct = result.groupdict()
+        dct["band"] = dct.get("band").strip()
+        dct["album"] = sanitize_album(dct.get("album"))
+
+    return dct
 
 
 def tracklist_from_chapters(chapters: list = [], verbose: bool = False) -> list:
@@ -222,7 +257,7 @@ def tracklist_from_file(tracklist_file: str, verbose: bool = False) -> list:
     "Returns a list with a tuple (idx,timestamp,track_name) given a tracklist file"
     if Path(tracklist_file).exists:
         tracks = open(tracklist_file, "r").readlines()
-        tracks = list(map(lambda t: sanitize_track(t.replace("\n", ""), False), tracks))
+        tracks = list(map(lambda t: sanitize_track(t.replace("\n", "")), tracks))
         tracks = list(filter(lambda t: t, tracks))
         idx = 0
         # First this script needs to find out which REGEX works.
@@ -237,6 +272,9 @@ def tracklist_from_file(tracklist_file: str, verbose: bool = False) -> list:
 
         if verbose:
             print(f"Using regex: {RE_TRACK!r}")
+
+        if not RE_TRACK:
+            return []
 
         # Second prepare the tracklist
         tracklist = []
@@ -270,7 +308,7 @@ def build_tracklist_from_file(tracklist_file: str, verbose: bool = False) -> lis
     "Returns a list with a tuple (idx,timestamp,track_name) given a tracklist file"
     if Path(tracklist_file).exists:
         tracks = open(tracklist_file, "r").readlines()
-        tracks = list(map(lambda t: sanitize_track(t.replace("\n", ""), False), tracks))
+        tracks = list(map(lambda t: sanitize_track(t.replace("\n", "")), tracks))
         tracks = list(filter(lambda t: t, tracks))
         idx = 0
         # First this script needs to find out which REGEX works.
@@ -325,24 +363,41 @@ def build_tracklist_from_file(tracklist_file: str, verbose: bool = False) -> lis
         return []
 
 
-def split_audio(audio_file: str, tracklist: list, verbose: bool = False) -> None:
+def save_id3(data:dict, sliced_audio_file:str, track: dict) -> None:
+    gba = guess_band_album(data.get("title"))
+
+    audiofile = eyed3.load(sliced_audio_file)
+    audiofile.tag.artist = gba.get("album")
+    audiofile.tag.album = gba.get("band")
+    audiofile.tag.album_artist = gba.get("album")
+    audiofile.tag.title = track.get("title")
+    audiofile.tag.track_num = track.get("n")
+
+    audiofile.tag.save()
+
+
+def split_audio(audio_file: str, data: dict, verbose: bool = False) -> None:
     audio_length = length(audio_file)
     outdir = audio_file.parent
 
     idx = 1
+    tracklist = data.get("tracklist")
     padding = len(str(len(tracklist)))
     for track in tracklist:
         pos = track.get("n")
         pos = pos if pos else idx
         pos = zfill(pos, padding)
-        outfile = f"{pos}__{track_as_filename(track.get('title'))}"
+        outfile = f"{pos}_-_{track_as_filename(track.get('title'))}"
+        sliced_audio_file = Path(outdir) / outfile
         slice_track(
             audio_file,
-            Path(outdir) / outfile,
+            sliced_audio_file,
             track.get("start"),
             track.get("end") or audio_length,
             verbose,
         )
+        if SAVE_ID3:
+            save_id3(data, str(sliced_audio_file), track)
         if verbose:
             print(outfile)
         idx += 1
@@ -359,10 +414,6 @@ def prepare_tracklist(data: dict, tracklist_file: str, build_it: bool = False) -
         if "chapters" in list(data.keys()) and data.get("chapters"):
             tracklist = tracklist_from_chapters(data.get("chapters"))
 
-    if not tracklist:
-        print("[ERROR] Missing playlist, can't continue")
-        sys.exit(1)
-
     return tracklist
 
 
@@ -377,8 +428,12 @@ def download_album(
     audio_title = sanitize_filename(data.get("title"), True, False)
     audio_title = Path(output_dir) / audio_title / f"{audio_title}.mp3"
     tracklist = data.get("tracklist")
+    if not tracklist:
+        print("[ERROR] Missing playlist, can't continue")
+        sys.exit(1)
+
     if audio_title.exists():
-        split_audio(audio_title, tracklist, verbose)
+        split_audio(audio_title, data, verbose)
         if not keep_original:
             audio_title.unlink()
     else:
@@ -442,7 +497,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.tracklist and args.verify_tracklist:
-        print(tracklist_from_file(args.tracklist))
+        print(tracklist_from_file(args.tracklist, args.verbose))
         sys.exit(0)
     else:
         if args.video:
