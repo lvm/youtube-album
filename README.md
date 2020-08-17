@@ -113,8 +113,8 @@ Sometimes there isn't a tracklist available but there's a _song list_ with their
 
 ## Dependencies
 
-https://pypi.org/project/youtube_dl/
-https://pypi.org/project/eyeD3/ [optional]
+* https://pypi.org/project/youtube_dl/
+* https://pypi.org/project/eyeD3/ [optional]
 
 ## LICENSE 
 
