@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 __author__ = "Mauro"
-__version__ = "0.0.6"
+__version__ = "0.0.7"
 __license__ = "BSD3"
 
 
@@ -78,7 +78,6 @@ MUSICDIR_RE = '.*="(.*)"'
 USER_AGENT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 YTDL_OPTS = {
     "quiet": True,
-    "restrictfilenames": True,
     "writethumbnail": True,
     "ignoreerrors": True,
     "geo_bypass": True,
@@ -196,6 +195,7 @@ def sanitize_track(track: str) -> str:
 def sanitize_album(album: str) -> str:
     clean_these = [
         "full album",  # from youtube probably"
+        "album completo",
         "\d{4}",  # year
         "(\[|\().*(\]|\))",
         "HD",
@@ -206,7 +206,8 @@ def sanitize_album(album: str) -> str:
 
 def track_as_filename(track: str, file_ext: str = ".mp3") -> str:
     "Prepares a trackname as a filename (ie: no spaces)"
-    track = sanitize_filename(track, True, False)
+    track = sanitize_filename(track, False, False)
+    track = track.replace(" ", "_")
     return f"{track.strip()}{file_ext}"
 
 
@@ -367,9 +368,9 @@ def save_id3(data:dict, sliced_audio_file:str, track: dict) -> None:
     gba = guess_band_album(data.get("title"))
 
     audiofile = eyed3.load(sliced_audio_file)
-    audiofile.tag.artist = gba.get("album")
-    audiofile.tag.album = gba.get("band")
-    audiofile.tag.album_artist = gba.get("album")
+    audiofile.tag.artist = gba.get("band")
+    audiofile.tag.album = gba.get("album")
+    audiofile.tag.album_artist = gba.get("band")
     audiofile.tag.title = track.get("title")
     audiofile.tag.track_num = track.get("n")
 
@@ -425,7 +426,7 @@ def download_album(
     verbose: bool = False,
 ) -> None:
     yt_dl(video, output_dir, verbose)
-    audio_title = sanitize_filename(data.get("title"), True, False)
+    audio_title = sanitize_filename(data.get("title"), False, False)
     audio_title = Path(output_dir) / audio_title / f"{audio_title}.mp3"
     tracklist = data.get("tracklist")
     if not tracklist:
