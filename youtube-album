@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 __author__ = "Mauro"
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 __license__ = "BSD3"
 
 
@@ -68,9 +68,10 @@ TRACK_RE_FORMATS = [
     "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) (?P<track>.+)",
     "(?P<n>\d+\.)(?P<track>.+) - (?P<time>(\d{1,2}:)?\d{1,2}:\d{2})",
     "(?P<track>.+) (?P<time>(\d{1,2}:)?\d{1,2}:\d{2})",
+    "\[(?P<time>(\d{1,2}:)?\d{1,2}:\d{2})\] (?P<track>.+)",
 ]
 BAND_ALBUM_RE = (
-    f"(?P<band>[{string.printable} ]+)( — | ▲ | - )(?P<album>[{string.printable}]+)"
+    f"(?P<band>[{string.printable} ]+)( — | ▲ | - | | )(?P<album>[{string.printable}]+)"
 )
 TRACK_RE = "(?P<n>\d+\.?)( )?(?P<track>.+)"
 LENGTH_RE = "\d{1,2}:(\d{1,2}:\d{2})\.\d+?"
