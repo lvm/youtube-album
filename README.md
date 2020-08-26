@@ -80,15 +80,16 @@ $ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE -i
 
 Youtube (these days) uses something called "chapters" which splits the video in small chunks (ie: Chapters), this script will use that in case you don't specify a `tracklist file`. But if you still want to define a `tracklist file` or if the Video doesn't has a "tracklist", some of the formats allowed are:
 
-* `<track no>. <time> - <track name>`
-* `<track no>.<track name> <time>`
-* `<track no>. <track name> <time>`
-* `<track no>. <track name> - <time>`
+* `<track no>. <time> - <track>`
+* `<track no>.<track> <time>`
+* `<track no>. <track> <time>`
+* `<track no>. <track> - <time>`
 * `<time> <track>`
-* `<time> - <track name>`
+* `<time> - <track>`
 * `<time> <track no>) <track>`
 * `<time> <track no>. <track>`
-* `<time> <track no>.<track name>`
+* `<time> <track no>.<track>`
+* `[<time>] <track>`
 
 ### Building a slice-able tracklist
 
