@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 __author__ = "Mauro"
-__version__ = "0.0.8"
+__version__ = "0.0.9"
 __license__ = "BSD3"
 
 
@@ -163,7 +163,7 @@ def slice_track(
     audio_in: str, audio_out: str, start: str, duration: str, verbose: bool = False
 ) -> None:
     "Cuts a portion of an audio."
-    args = '-i "{}" -ss "{}" -t "{}" -acodec copy "{}"'.format(
+    args = '-i "{}" -ss "{}" -to "{}" -async 1 -acodec copy "{}"'.format(
         audio_in, start, duration, audio_out
     )
     ffmpeg(args, verbose)
@@ -499,7 +499,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.tracklist and args.verify_tracklist:
-        print(tracklist_from_file(args.tracklist, args.verbose))
+        tracklist = tracklist_from_file(args.tracklist, args.verbose)
+        print(json.dumps(tracklist))
         sys.exit(0)
     else:
         if args.video:
