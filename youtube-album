@@ -30,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 __author__ = "Mauro"
-__version__ = "0.0.9"
+__version__ = "0.1.0"
 __license__ = "BSD3"
 
 
@@ -39,13 +39,19 @@ import re
 import sys
 import json
 import shlex
+import shutil
 import string
+import hashlib
+import tempfile
 import argparse
 import datetime
 import youtube_dl
+import http.client
+import urllib.request
 import subprocess as sp
 from pathlib import Path
 from datetime import datetime as dt
+from distutils.version import LooseVersion
 from youtube_dl.utils import sanitize_filename
 
 SAVE_ID3 = True
@@ -66,6 +72,7 @@ TRACK_RE_FORMATS = [
     "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) - (?P<track>.+)",
     "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) (?P<n>\d+(\.|\))) (?P<track>.+)",
     "(?P<time>(\d{1,2}:)?\d{1,2}:\d{2}) (?P<track>.+)",
+    "(?P<track>.+) (?P<time>(\d{1,2}:)?\d{1,2}:\d{2})",
     "(?P<n>\d+\.)(?P<track>.+) - (?P<time>(\d{1,2}:)?\d{1,2}:\d{2})",
     "(?P<track>.+) (?P<time>(\d{1,2}:)?\d{1,2}:\d{2})",
     "\[(?P<time>(\d{1,2}:)?\d{1,2}:\d{2})\] (?P<track>.+)",
@@ -91,9 +98,58 @@ YTDL_OPTS = {
         }
     ],
 }
+RAW_GITHUB = "https://raw.githubusercontent.com/lvm/youtube-album/master"
+
+
+def GET(url: str, save_as: str = "") -> http.client.HTTPResponse:
+    "HTTP(s) GET Requests"
+    request = urllib.request.Request(url)
+    request.add_header("Pragma", "no-cache")
+    request.add_header("User-Agent", f"youtube-album/{__version__}")
+    with urllib.request.urlopen(request) as response:
+        if response.status != 200:
+            return None
+
+        if save_as:
+            with open(save_as, "wb") as out:
+                shutil.copyfileobj(response, out)
+        else:
+            return response.read().decode("utf-8")
+
+    return None
+
+
+def md5checksum(filename: str):
+    "a very basic md5sum"
+    return hashlib.md5(open(filename, "rb").read()).hexdigest()
+
+
+def upgrade(dry_run: bool = False, verbose: bool = False) -> bool:
+    "verifies if it needs an upgrade or not"
+
+    def cmp_ver(a, b):
+        return LooseVersion(a) > LooseVersion(b)
+
+    response = GET(f"{RAW_GITHUB}/CURRENT")
+    latest, md5sum = re.sub("\\n", "", response).split(" ")
+    if cmp_ver(latest, __version__):
+        temp = tempfile.NamedTemporaryFile(delete=False)
+        GET(f"{RAW_GITHUB}/youtube-album", temp.name)
+        new_md5 = md5checksum(temp.name)
+        if new_md5 == md5sum:
+            this_file = Path(__file__)
+            if not dry_run:
+                this_file.unlink()
+                shutil.move(temp.name, this_file.absolute())
+            if verbose:
+                print(f"[*] Upgraded to v{latest} (md5: {md5sum})")
+    else:
+        if verbose:
+            print(f"[*] Already running latest version (v{__version__})")
 
 
 def music_home() -> Path:
+    "Find out XDG_MUSIC_DIR"
     try:
         user_dirs = open(Path.home() / ".config/user-dirs.dirs").readlines()
         music_dir = list(filter(lambda line: "XDG_MUSIC_DIR" in line, user_dirs))
@@ -103,9 +159,7 @@ def music_home() -> Path:
         music_dir = os.path.expandvars(re.findall(MUSICDIR_RE, music_dir)[0])
         return Path(music_dir)
     except:
-        from tempfile import gettempdir
-
-        return Path(gettempdir())
+        return Path(tempfile.gettempdir())
 
 
 def yt_info(video_url: str) -> dict:
@@ -187,7 +241,7 @@ def sanitize_timestamp(timestamp: str) -> str:
 
 def sanitize_track(track: str) -> str:
     "Tries in a extremely basic way to sanitize the track"
-    track = re.sub("  ", " ", track)
+    track = re.sub("(\t|\s{2,})", " ", track)
     track = track.strip()
 
     return track
@@ -225,7 +279,7 @@ def hhmmss_to_seconds(hhmmss: str) -> float:
 
 def guess_band_album(audio_title: str) -> dict:
     "Guesses the band / album based on the (non-sliced) filename"
-    dct = {"band":"", "album":""}
+    dct = {"band": "", "album": ""}
     result = re.search(BAND_ALBUM_RE, audio_title)
     if result:
         dct = result.groupdict()
@@ -365,7 +419,7 @@ def build_tracklist_from_file(tracklist_file: str, verbose: bool = False) -> lis
         return []
 
 
-def save_id3(data:dict, sliced_audio_file:str, track: dict) -> None:
+def save_id3(data: dict, sliced_audio_file: str, track: dict) -> None:
     gba = guess_band_album(data.get("title"))
 
     audiofile = eyed3.load(sliced_audio_file)
@@ -428,24 +482,30 @@ def download_album(
 ) -> None:
     yt_dl(video, output_dir, verbose)
     audio_title = sanitize_filename(data.get("title"), False, False)
-    audio_title = Path(output_dir) / audio_title / f"{audio_title}.mp3"
+    audio_file = Path(output_dir) / audio_title / f"{audio_title}.mp3"
     tracklist = data.get("tracklist")
-    if not tracklist:
-        print("[ERROR] Missing playlist, can't continue")
-        sys.exit(1)
-
-    if audio_title.exists():
-        split_audio(audio_title, data, verbose)
-        if not keep_original:
-            audio_title.unlink()
+    if data.get("no_tracklist"):
+        if audio_file.exists():
+            track = {"n": "01", "title": data.get("title")}
+            save_id3(data, str(audio_file), track)
+        # pass
     else:
-        print("[ERROR] Missing audio file, can't continue")
-        sys.exit(1)
+        if not tracklist:
+            print("[ERROR] Missing playlist, can't continue")
+            sys.exit(1)
+
+        if audio_file.exists():
+            split_audio(audio_file, data, verbose)
+            if not keep_original:
+                audio_file.unlink()
+        else:
+            print("[ERROR] Missing audio file, can't continue")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("video", type=str, help="Use this audio as source")
+    parser.add_argument("video", type=str, nargs="?", help="Use this audio as source")
     parser.add_argument(
         "-o",
         "--output-directory",
@@ -471,6 +531,12 @@ if __name__ == "__main__":
         help="Verify a Tracklist format",
     )
     parser.add_argument(
+        "-nt",
+        "--no-tracklist",
+        action="store_true",
+        help="No Tracklist. Probably a DJ Set or a Mixtape w/o timestamps.",
+    )
+    parser.add_argument(
         "-bt",
         "--build-tracklist",
         action="store_true",
@@ -493,31 +559,52 @@ if __name__ == "__main__":
         help="Keep original (non-sliced) mp3",
     )
     parser.add_argument(
+        "--dry-run", action="store_true", default=False, help="Just simulate."
+    )
+    parser.add_argument(
+        "-U", "--upgrade", action="store_true", help="Upgrade youtube-album"
+    )
+    parser.add_argument(
         "-V", "--verbose", action="store_true", help="Show stdout messages"
     )
 
     args = parser.parse_args()
 
+    if args.upgrade:
+        try:
+            upgrade(args.dry_run, args.verbose)
+            sys.exit(0)
+        except Exception as e:
+            if args.verbose:
+                print(f"Something went wrong while upgrading `youtube-album`\n{e}")
+            sys.exit(1)
+
     if args.tracklist and args.verify_tracklist:
         tracklist = tracklist_from_file(args.tracklist, args.verbose)
         print(json.dumps(tracklist))
         sys.exit(0)
-    else:
-        if args.video:
-            data = yt_info(args.video)
-            video = (
-                args.video
-                if args.video.startswith("https://")
-                else f"https://www.youtube.com/watch?v={args.video}"
-            )
-            tracklist = prepare_tracklist(data, args.tracklist, args.build_tracklist)
-            data["tracklist"] = tracklist
-            if args.info:
-                print(json.dumps(data))
-            else:
-                download_album(
-                    video, args.output_directory, data, args.keep_original, args.verbose
-                )
-            sys.exit(0)
+
+    if args.video:
+        data = yt_info(args.video)
+        video = (
+            args.video
+            if args.video.startswith("https://")
+            else f"https://www.youtube.com/watch?v={args.video}"
+        )
+        if args.no_tracklist:
+            data["no_tracklist"] = True
+            data["tracklist"] = None
         else:
-            args.print_help()
+            tracklist = prepare_tracklist(data, args.tracklist, args.build_tracklist)
+            data["no_tracklist"] = False
+            data["tracklist"] = tracklist
+        if args.info:
+            print(json.dumps(data))
+        else:
+            download_album(
+                video, args.output_directory, data, args.keep_original, args.verbose
+            )
+        sys.exit(0)
+
+    if not args.video and not args.upgrade:
+        parser.print_help()
