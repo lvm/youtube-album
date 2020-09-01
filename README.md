@@ -7,7 +7,7 @@ The next iteration of [2trax](https://github.com/lvm/2trax) but rewritten and si
 ## Usage
 
 ```
-usage: youtube-album [-h] [-o OUTPUT_DIRECTORY] [-t TRACKLIST] [-i] [-vt] [-bt] [-k] [-V] video
+usage: youtube-album [-h] [-o OUTPUT_DIRECTORY] [-t TRACKLIST] [-i] [-vt] [-nt] [-bt] [-k] [--dry-run] [-U] [-V] [video]
 
 positional arguments:
   video                 Use this audio as source
@@ -21,9 +21,12 @@ optional arguments:
   -i, --info            Don't download just get the info
   -vt, --verify-tracklist
                         Verify a Tracklist format
+  -nt, --no-tracklist   No Tracklist. Probably a DJ Set or a Mixtape w/o timestamps.
   -bt, --build-tracklist
                         Build a Tracklist format from a tracklist (?) From: 1. Song 1 04:03 2. Song 2 04:09 ... To: 1. Song 1 04:03 2. Song 2 08:12 ...
   -k, --keep-original   Keep original (non-sliced) mp3
+  --dry-run             Just simulate.
+  -U, --upgrade         Upgrade youtube-album
   -V, --verbose         Show stdout messages
 ```
 
@@ -75,6 +78,13 @@ Just get JSON info about the video.
 ```
 $ youtube-album https://www.youtube.com/watch?v=UlFNy9iWrpE -i
 ```
+
+Also you can upgrade it, similarly to `youtube-dl`
+
+```
+$ youtube-album -U
+```
+
 
 ### Tracklist formats
 
